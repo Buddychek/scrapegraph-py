@@ -22,14 +22,12 @@ uv add scrapegraph-py
 ## Quick Start
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, ScrapeRequest
+from scrapegraph_py import ScrapeGraphAI
 
 # reads SGAI_API_KEY from env, or pass explicitly: ScrapeGraphAI(api_key="...")
 sgai = ScrapeGraphAI()
 
-result = sgai.scrape(ScrapeRequest(
-    url="https://example.com",
-))
+result = sgai.scrape("https://example.com")
 
 if result.status == "success":
     print(result.data["results"]["markdown"]["data"])
@@ -47,6 +45,32 @@ class ApiResult(Generic[T]):
     error: str | None
     elapsed_ms: int
 ```
+## 🆚 Open Source vs Managed API
+
+This SDK is a client for the **managed cloud API**. ScrapeGraphAI also ships an [open-source library](https://github.com/ScrapeGraphAI/Scrapegraph-ai) you can run yourself. This table explains the difference so you can pick the right one.
+
+| | Open Source (`scrapegraphai`) | Managed API (this SDK) |
+|---|---|---|
+| **What it is** | A Python library you run yourself | A hosted cloud service you call via SDK |
+| **Where it runs** | Your own infrastructure (self-hosted) | ScrapeGraphAI cloud |
+| **LLM** | Bring your own (OpenAI, Groq, Gemini, Azure, local via Ollama) | Managed for you |
+| **Browser / JS rendering** | You configure it (Playwright) | Managed (stealth, `auto`/`fast`/`js` modes) |
+| **Proxies & anti-bot** | Your responsibility | Included |
+| **Scaling & maintenance** | Your responsibility | Fully managed |
+| **Cost model** | LLM tokens + your own infra | Pay-as-you-go credits |
+| **Auth** | Your own LLM keys | `SGAI_API_KEY` |
+| **Capabilities** | Graph pipelines (SmartScraper, Search, Speech, ScriptCreator…) | Scrape, Extract, Search, Crawl, Monitor, History |
+| **Setup effort** | More configuration | Minimal — API key + one call |
+| **License** | MIT | SDK is MIT; the API service is paid |
+
+**Choose the open-source library** if you want full control, on-prem/self-hosted data, local LLMs (Ollama), or fine-grained cost tuning — and you're happy to manage browsers, proxies and scaling yourself.
+
+**Choose the managed API** (this SDK) if you want zero infrastructure, managed JS rendering & anti-bot, built-in **Crawl** and scheduled **Monitor** jobs, and the fastest path to production — billed per credit.
+
+- Open-source library: https://github.com/ScrapeGraphAI/Scrapegraph-ai
+- Python SDK: https://github.com/ScrapeGraphAI/scrapegraph-py
+- JS/TS SDK: https://github.com/ScrapeGraphAI/scrapegraph-js
+- API docs: https://docs.scrapegraphai.com/introduction
 
 ## API
 
@@ -56,14 +80,14 @@ Scrape a webpage in multiple formats (markdown, html, screenshot, json, etc).
 
 ```python
 from scrapegraph_py import (
-    ScrapeGraphAI, ScrapeRequest, FetchConfig,
+    ScrapeGraphAI, FetchConfig,
     MarkdownFormatConfig, ScreenshotFormatConfig, JsonFormatConfig
 )
 
 sgai = ScrapeGraphAI()
 
-res = sgai.scrape(ScrapeRequest(
-    url="https://example.com",
+res = sgai.scrape(
+    "https://example.com",
     formats=[
         MarkdownFormatConfig(mode="reader"),
         ScreenshotFormatConfig(full_page=True, width=1440, height=900),
@@ -80,7 +104,7 @@ res = sgai.scrape(ScrapeRequest(
         cookies={"session": "abc"},
         country="us",
     ),
-))
+)
 ```
 
 **Formats:**
@@ -98,18 +122,17 @@ res = sgai.scrape(ScrapeRequest(
 Extract structured data from a URL, HTML, or markdown using AI.
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, ExtractRequest
+from scrapegraph_py import ScrapeGraphAI
 
 sgai = ScrapeGraphAI()
 
-res = sgai.extract(ExtractRequest(
-    url="https://example.com",
+res = sgai.extract(
     prompt="Extract product names and prices",
+    url="https://example.com",
     schema={"type": "object", "properties": {...}},  # optional
     mode="reader",                                    # optional
-    fetch_config=FetchConfig(...),                   # optional
-))
-# Or pass html/markdown directly instead of url
+    # Or pass html/markdown directly instead of url
+)
 ```
 
 ### search
@@ -117,45 +140,50 @@ res = sgai.extract(ExtractRequest(
 Search the web and optionally extract structured data.
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, SearchRequest
+from scrapegraph_py import ScrapeGraphAI
 
 sgai = ScrapeGraphAI()
 
-res = sgai.search(SearchRequest(
-    query="best programming languages 2024",
+res = sgai.search(
+    "best programming languages 2024",
     num_results=5,                      # 1-20, default 3
     format="markdown",                  # "markdown" | "html"
     prompt="Extract key points",        # optional, for AI extraction
     schema={...},                       # optional
     time_range="past_week",             # optional
     location_geo_code="us",             # optional
-    fetch_config=FetchConfig(...),      # optional
-))
+    allowed_types=["text/html", "application/pdf"],  # optional MIME allowlist
+)
 ```
+
+By default `search` accepts every supported content type, including PDFs, and processes up to 25
+pages per PDF. You do not need to send `processors` or `max_pages` for this default. Use
+`allowed_types` to restrict accepted MIME types. Only configure `processors` to override the cap;
+`PdfProcessor()` also defaults to 25, while `max_pages` accepts `1`–`500`, or `-1` for no page limit.
 
 ### crawl
 
 Crawl a website and its linked pages.
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, CrawlRequest, MarkdownFormatConfig
+from scrapegraph_py import ScrapeGraphAI, ScrapeMarkdownFormatEntry
 
 sgai = ScrapeGraphAI()
 
 # Start a crawl
-start = sgai.crawl.start(CrawlRequest(
-    url="https://example.com",
-    formats=[MarkdownFormatConfig()],
+start = sgai.crawl.start(
+    "https://example.com",
+    formats=[ScrapeMarkdownFormatEntry()],
     max_pages=50,
     max_depth=2,
     max_links_per_page=10,
     include_patterns=["/blog/*"],
     exclude_patterns=["/admin/*"],
-    fetch_config=FetchConfig(...),
-))
+)
 
 # Check status
 status = sgai.crawl.get(start.data["id"])
+pages = sgai.crawl.pages(start.data["id"], cursor=0, limit=50)
 
 # Control
 sgai.crawl.stop(crawl_id)
@@ -168,24 +196,23 @@ sgai.crawl.delete(crawl_id)
 Monitor a webpage for changes on a schedule.
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, MonitorCreateRequest, MarkdownFormatConfig
+from scrapegraph_py import ScrapeGraphAI, MarkdownFormatConfig
 
 sgai = ScrapeGraphAI()
 
 # Create a monitor
-mon = sgai.monitor.create(MonitorCreateRequest(
-    url="https://example.com",
+mon = sgai.monitor.create(
+    "https://example.com",
+    "0 * * * *",                        # cron expression
     name="Price Monitor",
-    interval="0 * * * *",               # cron expression
     formats=[MarkdownFormatConfig()],
     webhook_url="https://...",          # optional
-    fetch_config=FetchConfig(...),
-))
+)
 
 # Manage monitors
 sgai.monitor.list()
 sgai.monitor.get(cron_id)
-sgai.monitor.update(cron_id, MonitorUpdateRequest(interval="0 */6 * * *"))
+sgai.monitor.update(cron_id, interval="0 */6 * * *")
 sgai.monitor.pause(cron_id)
 sgai.monitor.resume(cron_id)
 sgai.monitor.delete(cron_id)
@@ -196,15 +223,15 @@ sgai.monitor.delete(cron_id)
 Fetch request history.
 
 ```python
-from scrapegraph_py import ScrapeGraphAI, HistoryFilter
+from scrapegraph_py import ScrapeGraphAI
 
 sgai = ScrapeGraphAI()
 
-history = sgai.history.list(HistoryFilter(
+history = sgai.history.list(
     service="scrape",                   # optional filter
     page=1,
     limit=20,
-))
+)
 
 entry = sgai.history.get("request-id")
 ```
@@ -229,11 +256,11 @@ All methods have async equivalents via `AsyncScrapeGraphAI`:
 
 ```python
 import asyncio
-from scrapegraph_py import AsyncScrapeGraphAI, ScrapeRequest
+from scrapegraph_py import AsyncScrapeGraphAI
 
 async def main():
     async with AsyncScrapeGraphAI() as sgai:
-        result = await sgai.scrape(ScrapeRequest(url="https://example.com"))
+        result = await sgai.scrape("https://example.com")
         if result.status == "success":
             print(result.data["results"]["markdown"]["data"])
         else:
@@ -246,42 +273,37 @@ asyncio.run(main())
 
 ```python
 async with AsyncScrapeGraphAI() as sgai:
-    res = await sgai.extract(ExtractRequest(
-        url="https://example.com",
+    res = await sgai.extract(
         prompt="Extract product names and prices",
-    ))
+        url="https://example.com",
+    )
 ```
 
 ### Async Search
 
 ```python
 async with AsyncScrapeGraphAI() as sgai:
-    res = await sgai.search(SearchRequest(
-        query="best programming languages 2024",
-        num_results=5,
-    ))
+    res = await sgai.search("best programming languages 2024", num_results=5)
 ```
 
 ### Async Crawl
 
 ```python
 async with AsyncScrapeGraphAI() as sgai:
-    start = await sgai.crawl.start(CrawlRequest(
-        url="https://example.com",
-        max_pages=50,
-    ))
+    start = await sgai.crawl.start("https://example.com", max_pages=50)
     status = await sgai.crawl.get(start.data["id"])
+    pages = await sgai.crawl.pages(start.data["id"], cursor=0, limit=50)
 ```
 
 ### Async Monitor
 
 ```python
 async with AsyncScrapeGraphAI() as sgai:
-    mon = await sgai.monitor.create(MonitorCreateRequest(
-        url="https://example.com",
+    mon = await sgai.monitor.create(
+        "https://example.com",
+        "0 * * * *",
         name="Price Monitor",
-        interval="0 * * * *",
-    ))
+    )
 ```
 
 ## Examples
@@ -301,6 +323,7 @@ async with AsyncScrapeGraphAI() as sgai:
 | search | [`search_with_extraction.py`](examples/search/search_with_extraction.py) | Search + AI extraction |
 | crawl | [`crawl_basic.py`](examples/crawl/crawl_basic.py) | Start and monitor a crawl |
 | crawl | [`crawl_with_formats.py`](examples/crawl/crawl_with_formats.py) | Crawl with formats |
+| crawl | [`crawl_pages.py`](examples/crawl/crawl_pages.py) | Paginated crawl pages with scrape results |
 | monitor | [`monitor_basic.py`](examples/monitor/monitor_basic.py) | Create a page monitor |
 | monitor | [`monitor_with_webhook.py`](examples/monitor/monitor_with_webhook.py) | Monitor with webhook |
 | utilities | [`credits.py`](examples/utilities/credits.py) | Check credits and limits |
@@ -322,6 +345,7 @@ async with AsyncScrapeGraphAI() as sgai:
 | search | [`search_with_extraction_async.py`](examples/search/search_with_extraction_async.py) | Search + AI extraction |
 | crawl | [`crawl_basic_async.py`](examples/crawl/crawl_basic_async.py) | Start and monitor a crawl |
 | crawl | [`crawl_with_formats_async.py`](examples/crawl/crawl_with_formats_async.py) | Crawl with formats |
+| crawl | [`crawl_pages_async.py`](examples/crawl/crawl_pages_async.py) | Paginated crawl pages with scrape results |
 | monitor | [`monitor_basic_async.py`](examples/monitor/monitor_basic_async.py) | Create a page monitor |
 | monitor | [`monitor_with_webhook_async.py`](examples/monitor/monitor_with_webhook_async.py) | Monitor with webhook |
 | utilities | [`credits_async.py`](examples/utilities/credits_async.py) | Check credits and limits |
@@ -333,18 +357,9 @@ async with AsyncScrapeGraphAI() as sgai:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SGAI_API_KEY` | Your ScrapeGraphAI API key | — |
-| `SGAI_API_URL` | Override API base URL | `https://api.scrapegraphai.com/api/v2` |
+| `SGAI_API_URL` | Override API base URL | `https://v2-api.scrapegraphai.com/api` |
 | `SGAI_DEBUG` | Enable debug logging (`"1"`) | off |
 | `SGAI_TIMEOUT` | Request timeout in seconds | `120` |
-
-## Development
-
-```bash
-uv sync
-uv run pytest tests/              # unit tests
-uv run pytest tests/test_integration.py  # live API tests (requires SGAI_API_KEY)
-uv run ruff check .               # lint
-```
 
 ## License
 
